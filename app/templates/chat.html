@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Penguin Coders Chat</title>
+    <!--Link to CSS -->
+    <link href="../static/bootstrap.min.css" rel="stylesheet" />
+    <link href="../static/style.css" rel="stylesheet" />
+
+    <script type="text/javascript" src="//code.jquery.com/jquery-1.4.2.min.js"></script>
+        <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/socket.io/4.5.4/socket.io.min.js"></script>
+        <script type="text/javascript" charset="utf-8">
+
+            var socket;
+
+            $(document).ready(function(){
+                // подключение к серверу по вебсокет протоколу
+                socket = new WebSocket("ws://127.0.0.1:5001/message");
+                socket.binaryType = "arraybuffer";
+                
+                // обработчик вхоящих сообщений
+                socket.onmessage = function(e) {
+                    recvMessage = JSON.parse(e.data);
+                    console.log(recvMessage);
+                    showMessage(recvMessage);
+                };
+                
+                // обработчик подключения
+                socket.onopen = function(e) {
+                    alert('connected');
+                };
+                
+                // обработчик отключения
+                socket.onclose = function(e) {
+                    alert('closed');
+                };
+                
+                // функция вывода нового сообщения в textArea
+                const showMessage = (messageData) => {
+                    // Если пришло текстовое сообщение, то отображаем его содержимое
+                    // Если пришёл путь к файлу, отображаем его
+                    if (messageData.message_text) {
+                        $('#chat').val($('#chat').val() + messageData.user_id + ': ' + messageData.message_text + '\n');
+                    }
+                    else if (messageData.file_src) {
+                        $('#chat').val($('#chat').val() + messageData.user_id + ': ' + messageData.file_src + '\n');
+                    }
+                    // скролл вниз при получени сообщения
+                    $('#chat').scrollTop($('#chat')[0].scrollHeight);
+                };
+
+                // функция отправки сообщений
+                $('#send').click(function(e) {
+                    // берётся значение из input с id "text"
+                    message = JSON.stringify({"message_text": $('#text').val()});
+                    socket.send(message);
+                });
+            });
+
+            
+            // Функция отправки файла на сервер по чанкам
+            function sendFile(files) {
+                // размер чанка (256Кб)
+                const CHUNK_SIZE = 1024 * 256;
+
+                var file = files[0];
+                var reader = new FileReader();
+                var rawData = new ArrayBuffer();    
+                offset = 0; 
+
+                reader.loadend = function() {
+
+                }
+                reader.onload = function() {
+                    let buffer = new Uint8Array(reader.result);
+                    // console.log(rawData);
+                    console.log(buffer);
+                    
+                    // Цикл проходит по всему файлу с шагом 1 чанк
+                    while (offset < buffer.length) {
+                        let chunk = buffer.slice(offset, offset + CHUNK_SIZE);
+                        console.log(chunk);
+
+                        let is_last = true;
+                        
+                        // Если чанк последний, то устанавливаем значение в true
+                        if (buffer[offset + CHUNK_SIZE + 1]) {
+                            is_last = false;
+                        }
+
+                        // обозначить последний чанк необходимо для того, чтобы
+                        // сервер знал, когда именно завершится загрузка файла
+                        // и внёс соответствующую запись в БД
+                        
+                        // отправка сообщения с чанком на сервер
+                        message = JSON.stringify({
+                            'file': chunk,
+                            'file_name': files[0]['name'],
+                            'offset': offset,
+                            'is_last_chunk': is_last
+                        });
+                        socket.send(message);
+                        offset += CHUNK_SIZE;
+                    }
+                }
+
+                reader.readAsArrayBuffer(file);
+
+            }
+            
+        </script>
+  </head>
+
+  <body class="text-center">
+
+    <div class="chatwindow">
+      <h2 >Penguin Coders Chat</h2>
+      <h2>Room : {{session['room']}}</h2><br>
+      <textarea id="chat" cols="70" rows="10" placeholder="No messages yet. Start one..."></textarea><br /><br />
+      <input type="text" id="text" size="60" placeholder="Enter your message here" />
+      <input type="file" onchange="sendFile(this.files)" />
+      <button type="button" id="send" class="btn btn-success">SEND</button><br /><br />
+      <center><button type="button" class="btn btn-danger" onclick=leave_room()>Leave this Chat</button></center>
+    </div>
+  </body>
+</html>
